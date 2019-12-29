@@ -50,12 +50,12 @@ AudioConnection          patchCord13(mixer1, 0, i2s2, 0);
 AudioControlSGTL5000     sgtl5000_1;
 
 
-const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
-
+// const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
+const int myInput = AUDIO_INPUT_MIC; // use mic input on the audio shield
 
 
 const float phaseshift = 90; // degrees phaseshift
-const float freq = 17200; // receiver center freq in Hz
+const float freq = 19600; // receiver center freq in Hz
 const float test_freq = 17200; // receiver center freq in Hz
 const float bfo_freq = 600; // BFO freq in Hz
 
@@ -296,6 +296,7 @@ void setup() {
   sgtl5000_1.volume(0.8);
   sgtl5000_1.lineInLevel(15);
   sgtl5000_1.lineOutLevel(13);
+  sgtl5000_1.micGain(63);
 
   // disable ADC High pass filter to reduce noise (as per http://openaudio.blogspot.com/2017/03/teensy-audio-board-self-noise.html?m=1)
   sgtl5000_1.adcHighPassFilterDisable();
@@ -351,9 +352,7 @@ void setup() {
 }
 
 void loop() {
-  // read the PC's volume setting
-  // float vol = usb1.volume();
-  // sgtl5000_1.volume(vol);
+
   delay(200);  
   digitalWrite(led, HIGH);
   delay(200);  
