@@ -12,7 +12,7 @@
 #include <Bounce.h>
 
 
-#include <Rotary.h>
+#include <Rotary.h> // Ben Buxton's rotary library https://github.com/buxtronix/arduino/tree/master/libraries/Rotary
 
 #define T4
 
