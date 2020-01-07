@@ -3,7 +3,7 @@ VLF receiver for the Teensy MCU + audio shield.
 
 Having visited Grimeton radio station (SAQ) in Sweden in August 2019, I came up with the idea to build a dedicated receiver.
 
-Inspired by SAQRX by SM6LKM (https://sites.google.com/site/sm6lkm/saqrx/) but I did not want to use the PC for this. Instead, I opted for using a Teensy MCU and its companion audio shield.
+Inspired by SAQRX by SM6LKM (https://sites.google.com/site/sm6lkm/saqrx/) but I did not want to use the PC for this. Instead, I opted for using a Teensy 4.0 MCU and its companion audio shield.
 
 Instead of using complex low pass filters as done in SAQRX, the complex multiplication is done after the I and Q filters. This is essentially Weaver's method of single sideband demodulation.
 
