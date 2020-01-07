@@ -14,10 +14,14 @@
 
 #include <Rotary.h>
 
-
 #define T4
 
-int led = 13;
+// init LED pins
+int led = 13; // builtin LED
+int led_blue = 3; // RGB encoder LED
+int led_green = 4; // RGB encoder LED
+int led_red = 5; // RGB encoder LED
+
 
 // GUItool: begin automatically generated code
 AudioInputI2S            i2s1;           //xy=146,340
@@ -28,7 +32,6 @@ AudioEffectMultiply      multiply2;      //xy=306.1666717529297,396.166671752929
 AudioFilterFIR           fir1;           //xy=457.16668701171875,335.16668701171875
 AudioFilterFIR           fir2;           //xy=457.16668701171875,396.16668701171875
 AudioSynthWaveformSine   sine4;          //xy=479.1666717529297,565.1666717529297
-AudioSynthWaveformSine   sine5;          
 AudioSynthWaveformSine   sine3;          //xy=485.1666717529297,516.1666717529297
 AudioEffectFade          fade2;          //xy=597,1231
 AudioEffectMultiply      multiply3;      //xy=615.1666717529297,333.1666717529297
@@ -37,26 +40,18 @@ AudioMixer4              mixer1;         //xy=783.1666870117188,361.166687011718
 AudioOutputI2S           i2s2;           //xy=848,217
 AudioConnection          patchCord1(i2s1, 0, multiply1, 0);
 AudioConnection          patchCord2(i2s1, 0, multiply2, 0);
-// AudioConnection          patchCord1(sine5, 0, multiply1, 0);
-// AudioConnection          patchCord2(sine5, 0, multiply2, 0);
-
 AudioConnection          patchCord3(sine1, 0, multiply1, 1);
 AudioConnection          patchCord4(sine2, 0, multiply2, 1);
 AudioConnection          patchCord5(multiply1, fir1);
 AudioConnection          patchCord6(multiply2, fir2);
 AudioConnection          patchCord7(fir1, 0, multiply3, 0);
 AudioConnection          patchCord8(fir2, 0, multiply4, 0);
-// AudioConnection          patchCord7(multiply1, 0, multiply3, 0);
-// AudioConnection          patchCord8(multiply2, 0, multiply4, 0);
-
 AudioConnection          patchCord9(sine3, 0, multiply4, 1);
 AudioConnection          patchCord10(sine4, 0, multiply3, 1);
 AudioConnection          patchCord11(multiply3, 0, mixer1, 0);
 AudioConnection          patchCord12(multiply4, 0, mixer1, 1);
 AudioConnection          patchCord13(mixer1, 0, i2s2, 0);
 AudioConnection          patchCord14(mixer1, 0, i2s2, 1);
-// AudioConnection          patchCord13(sine4, 0, i2s2, 0);
-
 AudioAnalyzeRMS      rms;
 AudioConnection          patchCord15(mixer1, 0, rms, 0);
 // GUItool: end automatically generated code
@@ -71,15 +66,13 @@ Rotary rotary = Rotary(1, 0);
 // const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
 const int myInput = AUDIO_INPUT_MIC; // use mic input on the audio shield
 
-
-const int samplerate = 44117.64706; //352800; //192000;
+const int samplerate = 44117.64706;
 const float samplerate_factor = 44117.64706 / samplerate;
 
 const float phaseshift = 90; // degrees phaseshift
 
 const float default_freq = 17200;
 float freq = default_freq; // receiver center freq in Hz
-const float test_freq = 17200; // receiver center freq in Hz
 const float bfo_freq = 600; // BFO freq in Hz
 float freqstep = 25; // tuning step in Hz
 const int micgain = 63; // mic gain in dB
@@ -330,7 +323,7 @@ void setup() {
   
   //setup everything
   // disable interrupts for a while to setup everything, and guarantee accurate phase quadrature
-  AudioNoInterrupts();  // disable audio library momentarily
+  AudioNoInterrupts(); // disable audio library momentarily
   // set sample rate
   setI2SFreq(samplerate);
   
@@ -354,37 +347,26 @@ void setup() {
   sine4.phase(0);
 
   
-  // testsig cos
-  sine5.amplitude(1.0);
-  sine5.frequency(test_freq * samplerate_factor);
-  sine5.phase(phaseshift);
-  AudioInterrupts();    // enable audio library
+  AudioInterrupts(); // enable audio interrupts again
   
-  
-  // setup the delay
-  //delay1.delay(0, delaytime);  // init gain to 1
-  //amp1.gain(1);
-  //fade1.fadeIn(10);
-  
-
-  // initialize the LED digital pin as an output.
+  // initialize the builtin LED digital pin as an output.
   pinMode(led, OUTPUT);
 
   // encoder, switch and LED pins
   pinMode(0, INPUT_PULLUP); // encoder A
   pinMode(1, INPUT_PULLUP); // encoder B
   pinMode(2, INPUT); // encoder SW
-  pinMode(3, OUTPUT); // LED BLUE
-  pinMode(4, OUTPUT); // LED GREEN
-  pinMode(5, OUTPUT); // LED RED
+  pinMode(led_blue, OUTPUT); // LED BLUE
+  pinMode(led_green, OUTPUT); // LED GREEN
+  pinMode(led_red, OUTPUT); // LED RED
   
-  digitalWrite(3, HIGH); // LED OFF
-  digitalWrite(4, HIGH); // LED OFF
-  digitalWrite(5, HIGH); // LED OFF
+  digitalWrite(led_blue, HIGH); // LED OFF
+  digitalWrite(led_green, HIGH); // LED OFF
+  digitalWrite(led_red, HIGH); // LED OFF
 
 
 
-//start FIR filter
+  //start FIR filter
 
   fir1.begin(filter_taps, FILTER_TAP_NUM);
   fir2.begin(filter_taps, FILTER_TAP_NUM);
@@ -401,20 +383,14 @@ void setup() {
   // display the frequency
   displayfreq();
 
-
-
   
 }
 
 
   void setfreq(){  
-// Serial.println(freq);
- 
- 
-
-    
-   AudioNoInterrupts();    // enable audio library
-      // ddc sin
+   
+  AudioNoInterrupts(); // disable interrupts for a while to setup everything, and guarantee accurate phase quadrature
+  // ddc sin
   sine1.amplitude(1.0);
   sine1.frequency(freq * samplerate_factor);
   sine1.phase(0);
@@ -422,73 +398,59 @@ void setup() {
   sine2.amplitude(1.0);
   sine2.frequency(freq * samplerate_factor);
   sine2.phase(phaseshift);
-    AudioInterrupts();    // enable audio library
+    AudioInterrupts(); // enable audio interrupts again
   }
 
   void displayfreq(){
-  u8g2.clearBuffer();          // clear the internal memory
+  u8g2.clearBuffer(); // clear the internal memory
   u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
-  u8g2.drawStr(0, 10, "Freq (Hz):");  // write something to the internal memory
+  u8g2.drawStr(0, 10, "Freq (Hz):"); // write something to the internal memory
   u8g2.setCursor(0, 24);
   u8g2.print(freq);
-  u8g2.sendBuffer();          // transfer internal memory to the display
+  u8g2.sendBuffer(); // transfer internal memory to the display
   }
   void clear_display(){
-  u8g2.clearBuffer();          // clear the internal memory
-//  u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
-//  // u8g2.drawStr(0, 10, "Hello,");  // write something to the internal memory
-//  u8g2.setCursor(0, 24);
-//  u8g2.print(freq);
-  u8g2.sendBuffer();          // transfer internal memory to the display
+  u8g2.clearBuffer(); // clear the internal memory
+  u8g2.sendBuffer();  // transfer internal memory to the display
   }
 
 // rotate is called anytime the rotary inputs change state.
 void rotate() {
   unsigned char result = rotary.process();
 
-if (digitalRead(2)) {
-  freqstep = 1000;
+  if (digitalRead(2)) { // if rotary button is pressed
+    freqstep = 1000; // set tuning step to 1 kHz
+    }
+  else {
+    freqstep = 25; // set tuning step to 25 Hz
   }
-else {
-  freqstep = 25;
-}
   
   if (result == DIR_CW) {
-    freq = freq + freqstep;
+    freq = freq + freqstep; // increment frequency
 
   } else if (result == DIR_CCW) {
-    freq = freq - freqstep;
+    freq = freq - freqstep; // decrement ferquency
 
   }
 
-// frequency limits
-    if (freq < 1000) {
-      freq = 1000;
-      
-    }
-    else {
-      
-    }
-    if (freq > samplerate/2) {
-      freq = 22050;//floor(samplerate/2);
-      
-    }
-    else {
-      
-    }
+  // frequency limits
+  if (freq < 1000) { // frequency lower than 1 kHz
+    freq = 1000;
+    
+  }
+
+  if (freq > samplerate/2) {
+    freq = 22050;//floor(samplerate/2); // FIXME - make dependent on sample rate and floor, taking smallest tuning step into account
+  }
 
     
-  setfreq();
+  setfreq(); // set the current frequency
   if (do_display) {
-    displayfreq();
+    displayfreq(); // display the current frequency
     }
-//    else {
-//      clear_display();
-//      }
-
   }
 
-// set samplerate code by Frank Bösing
+// set samplerate code by Frank Bösing - taken from DD4WH's convolution SDR code: https://github.com/DD4WH/Teensy-ConvolutionSDR
 void setI2SFreq(int freq) {
 #if defined(T4) 
   // PLL between 27*24 = 648MHz und 54*24=1296MHz
@@ -558,62 +520,34 @@ void setI2SFreq(int freq) {
 
 void loop() {
 
-//crude AGC
-if (rms.available()) {
-      
-      float agc = 0.5 /rms.read();
-      if (agc > 0.7) {
-        agc = 0.7;
-      }
-      sgtl5000_1.volume(agc);
-      Serial.println(agc);
-}
-
+  // very crude AGC - divide the amplitude by the measured RMS, with an empirically determined threshold
+  if (rms.available()) {
+    float agc = 0.5 /rms.read();
+    if (agc > 0.7) {
+      agc = 0.7;
+    }
+    sgtl5000_1.volume(agc);
+    Serial.println(agc);
+  }
   
 bouncer.update ( );
  int value = bouncer.risingEdge();//bouncer.read();
-//  long newPosition = myEnc.read();
-//  if (newPosition != oldPosition) {
-//    oldPosition = newPosition;
-    
 
-//  delay(200);  
-//  digitalWrite(led, HIGH);
-//  // digitalWrite(5, LOW); // LED ON
-//  delay(200);  
-//  digitalWrite(led, LOW);
-  // digitalWrite(5, HIGH); // LED OFF
-//  
-// if (digitalRead(2)) {
-//   digitalWrite(4, LOW); // LED ON
-//   // freq = default_freq;
-//   // setfreq();
-//   // freqstep = 1000;
-//   
-// } else {
-//   digitalWrite(4, HIGH); // LED OFF
-//   // freqstep = 25;
-//   
-// }
-
-if (value == HIGH) {
-
-  if (do_display){
-    do_display = false;
-    digitalWrite(4, HIGH); // LED OFF 
-    digitalWrite(5, HIGH); // LED OFF 
-    
-       
-
-  }
-  else {
-    do_display = true;
-    digitalWrite(4, LOW); // LED ON
-    digitalWrite(5, LOW); // LED ON
-
-  }
-}
+  if (value == HIGH) { // encoder button is pressed
   
+    if (do_display){
+      do_display = false;
+      digitalWrite(led_green, HIGH); // LED OFF 
+      digitalWrite(led_red, HIGH); // LED OFF 
+            
   
+    }
+    else {
+      do_display = true;
+      digitalWrite(led_green, LOW); // LED ON
+      digitalWrite(led_red, LOW); // LED ON
+  
+    }
+  }
   
 }
