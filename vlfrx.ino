@@ -40,7 +40,7 @@ AudioMixer4              mixer1;         //xy=783.1666870117188,361.166687011718
 AudioOutputI2S           i2s2;           //xy=848,217
 
 AudioEffectDelay         delay1;
-
+AudioAnalyzeFFT1024      FFT1;
 AudioConnection          patchCord1(i2s1, 0, multiply1, 0);
 AudioConnection          patchCord2(i2s1, 0, multiply2, 0);
 AudioConnection          patchCord3(sine1, 0, multiply1, 1);
@@ -53,13 +53,17 @@ AudioConnection          patchCord9(sine3, 0, multiply4, 1);
 AudioConnection          patchCord10(sine4, 0, multiply3, 1);
 AudioConnection          patchCord11(multiply3, 0, mixer1, 0);
 AudioConnection          patchCord12(multiply4, 0, mixer1, 1);
-AudioConnection          patchCord13(delay1, 0, i2s2, 0);
-AudioConnection          patchCord14(delay1, 0, i2s2, 1);
+
 AudioAnalyzePeak         peak;
 AudioConnection          patchCord15(mixer1, 0, peak, 0);
 
 
 AudioConnection          patchCord16(mixer1, 0, delay1, 0);
+AudioConnection          patchCord13(delay1, 0, i2s2, 0);
+AudioConnection          patchCord14(delay1, 0, i2s2, 1);
+AudioConnection          patchCord17(delay1, 0, FFT1, 0);
+
+
 // GUItool: end automatically generated code
 AudioControlSGTL5000     sgtl5000_1;
 
@@ -89,6 +93,13 @@ float vol = 0;
 const float alpha = 0.002; // averaging for AGC decay
 const float alpha2 = 1; // averaging for peak value display in dBFS
 const int delaytime = 10; // milliseconds
+
+//FFT vars
+const int low_idx = 7;    // lower frequency limit is 300 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
+const int high_idx = 21; // upper frequency limit is  900 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
+const int n_bins = high_idx - low_idx + 1; // the number of bins to be processed in the FFT for a 1024 point FFT
+const int n_pixels = 64; // number of row pixels of the OLED display
+int pixel = 0;
 /*
 
 FIR filter designed with
@@ -378,6 +389,10 @@ void setup() {
   // setup the delay
   delay1.delay(0, delaytime);
 
+
+  // Configure the window algorithm to use for the FFT
+  FFT1.windowFunction(AudioWindowHanning1024);
+
   //start FIR filter
 
   fir1.begin(filter_taps, FILTER_TAP_NUM);
@@ -424,15 +439,12 @@ void setup() {
   u8g2.print(dblevel);
   u8g2.print(" dBFS");
   u8g2.sendBuffer(); // transfer internal memory to the display
+  u8g2.setCursor(pixel, 34);  
+  u8g2.print("|");
+  u8g2.sendBuffer(); // transfer internal memory to the display
+  
   }
-//  void displaylevel(){
-//  u8g2.clearBuffer(); // clear the internal memory
-//  u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
-//  u8g2.drawStr(0, 10, "Level (dBFS):"); // write something to the internal memory
-//  u8g2.setCursor(0, 24);
-//  u8g2.print(dblevel);
-//  u8g2.sendBuffer(); // transfer internal memory to the display
-//  }
+
   void clear_display(){
   u8g2.clearBuffer(); // clear the internal memory
   u8g2.sendBuffer();  // transfer internal memory to the display
@@ -469,9 +481,7 @@ void rotate() {
 
     
   setfreq(); // set the current frequency
-//  if (do_display) {
-//    displayfreq(); // display the current frequency
-//    }
+
   }
 
 // set samplerate code by Frank Bösing - taken from DD4WH's convolution SDR code: https://github.com/DD4WH/Teensy-ConvolutionSDR
@@ -548,12 +558,7 @@ void loop() {
   if (peak.available()) {
     float read_level = peak.read();
     float agc = 1 /(30*read_level);
-//    if (agc > 1) { // now AGC is operating open loop
-//      vol = 1;
-//      digitalWrite(led_red, HIGH); // LED OFF
-//    }
-    // else { // now AGC is operating closed loop
-      // digitalWrite(led_red, LOW); // LED ON
+
       // include a hang time
       if (agc < vol) { // fast attack (instantaneous, actually)
         vol = agc;
@@ -570,8 +575,28 @@ void loop() {
 
     avg_level = (1-alpha2)*avg_level + alpha2*read_level;
     dblevel = 20*log10(avg_level);
-    Serial.println(dblevel);
+    //Serial.println(dblevel);
     displaystuff();
+    
+      if (FFT1.available()) {
+    
+      // each time new FFT data is available
+      // calculate the position of the max the data between the bins of interest
+        float maxval = 0;
+        int maxidx = 0;
+        for (int i = low_idx; i <= high_idx; i++) {
+          if (FFT1.read(i)> maxval){
+            // store a new max value
+            maxval = FFT1.read(i);
+            maxidx = i; // maxidx runs from 0:n_bins
+            
+            }
+        }
+        // map the maxidx to a display pixel, assuming 64 horizontal pixels
+        pixel = map(maxidx, low_idx, high_idx, 0, n_pixels-1);
+        Serial.println(pixel);
+        
+      }
     
     }
   
@@ -582,21 +607,8 @@ bouncer.update ( );
   if (value == HIGH) { // encoder button is pressed
     //displayfreq();
     displaystuff();
-    
   
-//    if (do_display){
-//      do_display = false;
-//      digitalWrite(led_green, HIGH); // LED OFF 
-//      digitalWrite(led_red, HIGH); // LED OFF 
-//            
-//  
-//    }
-//    else {
-//      do_display = true;
-//      digitalWrite(led_green, LOW); // LED ON
-//      digitalWrite(led_red, LOW); // LED ON
-//  
-//    }
+
   }
   
 }
