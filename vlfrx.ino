@@ -38,6 +38,9 @@ AudioEffectMultiply      multiply3;      //xy=615.1666717529297,333.166671752929
 AudioEffectMultiply      multiply4;      //xy=639.1666717529297,399.1666717529297
 AudioMixer4              mixer1;         //xy=783.1666870117188,361.16668701171875
 AudioOutputI2S           i2s2;           //xy=848,217
+
+AudioEffectDelay         delay1;
+
 AudioConnection          patchCord1(i2s1, 0, multiply1, 0);
 AudioConnection          patchCord2(i2s1, 0, multiply2, 0);
 AudioConnection          patchCord3(sine1, 0, multiply1, 1);
@@ -50,10 +53,13 @@ AudioConnection          patchCord9(sine3, 0, multiply4, 1);
 AudioConnection          patchCord10(sine4, 0, multiply3, 1);
 AudioConnection          patchCord11(multiply3, 0, mixer1, 0);
 AudioConnection          patchCord12(multiply4, 0, mixer1, 1);
-AudioConnection          patchCord13(mixer1, 0, i2s2, 0);
-AudioConnection          patchCord14(mixer1, 0, i2s2, 1);
-AudioAnalyzeRMS      rms;
-AudioConnection          patchCord15(mixer1, 0, rms, 0);
+AudioConnection          patchCord13(delay1, 0, i2s2, 0);
+AudioConnection          patchCord14(delay1, 0, i2s2, 1);
+AudioAnalyzePeak         peak;
+AudioConnection          patchCord15(mixer1, 0, peak, 0);
+
+
+AudioConnection          patchCord16(mixer1, 0, delay1, 0);
 // GUItool: end automatically generated code
 AudioControlSGTL5000     sgtl5000_1;
 
@@ -73,11 +79,16 @@ const float phaseshift = 90; // degrees phaseshift
 
 const float default_freq = 17200;
 float freq = default_freq; // receiver center freq in Hz
+float dblevel = 2;
+float avg_level = 0;
 const float bfo_freq = 600; // BFO freq in Hz
 float freqstep = 25; // tuning step in Hz
 const int micgain = 63; // mic gain in dB
 bool do_display = true;
-
+float vol = 0;
+const float alpha = 0.002; // averaging for AGC decay
+const float alpha2 = 1; // averaging for peak value display in dBFS
+const int delaytime = 10; // milliseconds
 /*
 
 FIR filter designed with
@@ -364,7 +375,8 @@ void setup() {
   digitalWrite(led_green, HIGH); // LED OFF
   digitalWrite(led_red, HIGH); // LED OFF
 
-
+  // setup the delay
+  delay1.delay(0, delaytime);
 
   //start FIR filter
 
@@ -374,14 +386,14 @@ void setup() {
   Serial.begin(9600);
   attachInterrupt(0, rotate, CHANGE);
   attachInterrupt(1, rotate, CHANGE);
-  Serial.println("samplerate_factor:");
-  Serial.println(samplerate_factor);
+//  Serial.println("samplerate_factor:");
+//  Serial.println(samplerate_factor);
   u8g2.begin();
 
   // init the frequency
   setfreq();
   // display the frequency
-  displayfreq();
+  displaystuff();
 
   
 }
@@ -401,14 +413,26 @@ void setup() {
     AudioInterrupts(); // enable audio interrupts again
   }
 
-  void displayfreq(){
+  void displaystuff(){
   u8g2.clearBuffer(); // clear the internal memory
   u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
-  u8g2.drawStr(0, 10, "Freq (Hz):"); // write something to the internal memory
-  u8g2.setCursor(0, 24);
+  // u8g2.drawStr(0, 10, "Freq (Hz):"); // write something to the internal memory
+  u8g2.setCursor(0, 10);  
   u8g2.print(freq);
+  u8g2.print(" Hz");
+  u8g2.setCursor(0, 24);  
+  u8g2.print(dblevel);
+  u8g2.print(" dBFS");
   u8g2.sendBuffer(); // transfer internal memory to the display
   }
+//  void displaylevel(){
+//  u8g2.clearBuffer(); // clear the internal memory
+//  u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
+//  u8g2.drawStr(0, 10, "Level (dBFS):"); // write something to the internal memory
+//  u8g2.setCursor(0, 24);
+//  u8g2.print(dblevel);
+//  u8g2.sendBuffer(); // transfer internal memory to the display
+//  }
   void clear_display(){
   u8g2.clearBuffer(); // clear the internal memory
   u8g2.sendBuffer();  // transfer internal memory to the display
@@ -419,7 +443,7 @@ void rotate() {
   unsigned char result = rotary.process();
 
   if (digitalRead(2)) { // if rotary button is pressed
-    freqstep = 1000; // set tuning step to 1 kHz
+    freqstep = 100; // set tuning step to 1 kHz
     }
   else {
     freqstep = 25; // set tuning step to 25 Hz
@@ -445,9 +469,9 @@ void rotate() {
 
     
   setfreq(); // set the current frequency
-  if (do_display) {
-    displayfreq(); // display the current frequency
-    }
+//  if (do_display) {
+//    displayfreq(); // display the current frequency
+//    }
   }
 
 // set samplerate code by Frank Bösing - taken from DD4WH's convolution SDR code: https://github.com/DD4WH/Teensy-ConvolutionSDR
@@ -520,34 +544,59 @@ void setI2SFreq(int freq) {
 
 void loop() {
 
-  // very crude AGC - divide the amplitude by the measured RMS, with an empirically determined threshold
-  if (rms.available()) {
-    float agc = 0.5 /rms.read();
-    if (agc > 0.7) {
-      agc = 0.7;
+  // very crude AGC - divide the amplitude by the measured peak, with an empirically determined threshold
+  if (peak.available()) {
+    float read_level = peak.read();
+    float agc = 1 /(30*read_level);
+//    if (agc > 1) { // now AGC is operating open loop
+//      vol = 1;
+//      digitalWrite(led_red, HIGH); // LED OFF
+//    }
+    // else { // now AGC is operating closed loop
+      // digitalWrite(led_red, LOW); // LED ON
+      // include a hang time
+      if (agc < vol) { // fast attack (instantaneous, actually)
+        vol = agc;
+        }
+        else{ // slow decay
+        vol = (1-alpha)*vol + alpha*agc;  // simple 1st order IIR low pass filter
+        }
+      // }
+    if (vol > 0.7) {
+      vol = 0.7;
     }
-    sgtl5000_1.volume(agc);
-    Serial.println(agc);
-  }
+    sgtl5000_1.volume(vol);
+    
+
+    avg_level = (1-alpha2)*avg_level + alpha2*read_level;
+    dblevel = 20*log10(avg_level);
+    Serial.println(dblevel);
+    displaystuff();
+    
+    }
+  
   
 bouncer.update ( );
  int value = bouncer.risingEdge();//bouncer.read();
 
   if (value == HIGH) { // encoder button is pressed
+    //displayfreq();
+    displaystuff();
+    
   
-    if (do_display){
-      do_display = false;
-      digitalWrite(led_green, HIGH); // LED OFF 
-      digitalWrite(led_red, HIGH); // LED OFF 
-            
-  
-    }
-    else {
-      do_display = true;
-      digitalWrite(led_green, LOW); // LED ON
-      digitalWrite(led_red, LOW); // LED ON
-  
-    }
+//    if (do_display){
+//      do_display = false;
+//      digitalWrite(led_green, HIGH); // LED OFF 
+//      digitalWrite(led_red, HIGH); // LED OFF 
+//            
+//  
+//    }
+//    else {
+//      do_display = true;
+//      digitalWrite(led_green, LOW); // LED ON
+//      digitalWrite(led_red, LOW); // LED ON
+//  
+//    }
   }
   
 }
