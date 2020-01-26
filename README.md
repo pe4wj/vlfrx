@@ -19,6 +19,8 @@ The code also includes a 1024 point FFT which can be used as a tuning aid, effec
 
 Frank B's (https://github.com/FrankBoesing/) sample rate change code is included as well to have a larger frequency coverage. Changing the sample rate will also mean that the bandwidth of the FIR low pass filters changes, up to the point where there is no longer sufficient image rejection, when using a 600 Hz "BFO" frequency. The FIR filters could be re-calculated to accommodate a larger sample rate while maintaining the current corner frequency of 250 Hz but in order to achieve sufficient stopband rejection that would require more coefficients than the 200 that the Teensy can handle. I have therefore chosen to simply run it at the default 44117.64706 samples/second, and a max receive frequency of 22050 Hz.
 
+Code from Ben Buxton's excellent rotary library https://github.com/buxtronix/arduino/tree/master/libraries/Rotary is used for the rotary encoder used to select the receiver center frequency.
+
 The Teensy + audio shield was built into a small enclosure including a TDA2822 audio amplifier, OLED display and rotary encoder. The small box to the right is an active ("E-field probe") antenna based on a BF245 JFET which is biased by the microphone bias voltage coming from the audio shield. The actual antenna is a wire of approx 25 cm formed into a loop and soldered into a 2 mm banana socket. The antenna contains a "ground" terminal for attaching a ground wire. Normally, holding the antenna in the air while touching the metal audio connector shield provides plenty of signal.
 
 ![Optional Text](../master/vlfrx.jpg)
