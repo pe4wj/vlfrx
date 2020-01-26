@@ -21,4 +21,5 @@ The Teensy + audio shield was built into a small enclosure including a TDA2822 a
 
 
 The E-field probe circuit can be found below. Since the active component is a depletion mode JFET, it works ok without a gate bias (provided the actual probe is not too large, ensuring that the device operates linearly). The 10 M resistor provides a static bleed path and acts as a high pass filter with the 560 pF and the antenna series capacitance. The 150 k resistor forms a low pass filter combined with the gate-source capacitance of the JFET. For a BF245 JFET, C_gs is approx 3 pF, yielding a corner frequency of approximately 354 kHz. This helps to keep strong medium wave signals from causing non-linear distortion.
+
 ![Optional Text](../master/antenna.png)
