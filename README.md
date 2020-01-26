@@ -18,3 +18,7 @@ The Teensy audio library contains a wealth of signal processing functions. There
 The Teensy + audio shield was built into a small enclosure including a TDA2822 audio amplifier, OLED display and rotary encoder. The small box to the right is an active ("E-field probe") antenna based on a BF245 JFET which is biased by the microphone bias voltage coming from the audio shield. The actual antenna is a wire of approx 25 cm formed into a loop and soldered into a 2 mm banana socket. The antenna contains a "ground" terminal for attaching a ground wire. Normally, holding the antenna in the air while touching the metal audio connector shield provides plenty of signal.
 
 ![Optional Text](../master/vlfrx.jpg)
+
+
+The E-field probe circuit can be found below. Since the active component is a depletion mode JFET, it works ok without a gate bias (provided the actual probe is not too large, ensuring that the device operates linearly). The 10 M resistor provides a static bleed path and acts as a high pass filter with the 560 pF and the antenna series capacitance. The 150 k resistor forms a low pass filter combined with the gate-source capacitance of the JFET. For a BF245 JFET, C_gs is approx 3 pF, yielding a corner frequency of approximately 354 kHz. This helps to keep strong medium wave signals from causing non-linear distortion.
+![Optional Text](../master/antenna.png)
