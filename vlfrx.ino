@@ -67,7 +67,7 @@ AudioConnection          patchCord17(delay1, 0, FFT1, 0);
 // GUItool: end automatically generated code
 AudioControlSGTL5000     sgtl5000_1;
 
-Bounce bouncer = Bounce( 2,50);  // rotary push button
+Bounce bouncer = Bounce(2,50);  // rotary push button
 
 U8G2_SSD1306_64X32_1F_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
