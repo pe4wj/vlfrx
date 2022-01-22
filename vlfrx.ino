@@ -23,7 +23,6 @@ int led_green = 4; // RGB encoder LED
 int led_red = 5; // RGB encoder LED
 
 
-// GUItool: begin automatically generated code
 AudioInputI2S            i2s1;           //xy=146,340
 AudioSynthWaveformSine   sine1;          //xy=198.1666717529297,538.1666870117188
 AudioSynthWaveformSine   sine2;          //xy=216.1666717529297,591.1666717529297
@@ -41,14 +40,41 @@ AudioOutputI2S           i2s2;           //xy=848,217
 
 AudioEffectDelay         delay1;
 AudioAnalyzeFFT1024      FFT1;
+
+
+
+
+AudioFilterStateVariable filt1;
+AudioFilterStateVariable filt2;
+AudioFilterStateVariable filt3;
+AudioFilterStateVariable filt4;
+
+
+
+
+
 AudioConnection          patchCord1(i2s1, 0, multiply1, 0);
 AudioConnection          patchCord2(i2s1, 0, multiply2, 0);
 AudioConnection          patchCord3(sine1, 0, multiply1, 1);
 AudioConnection          patchCord4(sine2, 0, multiply2, 1);
 AudioConnection          patchCord5(multiply1, fir1);
 AudioConnection          patchCord6(multiply2, fir2);
-AudioConnection          patchCord7(fir1, 0, multiply3, 0);
-AudioConnection          patchCord8(fir2, 0, multiply4, 0);
+// AudioConnection          patchCord7(fir1, 0, multiply3, 0);@@@
+// AudioConnection          patchCord8(fir2, 0, multiply4, 0);@@@
+
+// fir1 to filt1&2
+AudioConnection          patchCord18(fir1, 0, filt1, 0); // I
+AudioConnection          patchCord19(fir2, 0, filt2, 0); // Q
+
+// filt 1&2 to filt3&4
+AudioConnection          patchCord20(filt1, 0, filt3, 0); // I
+AudioConnection          patchCord21(filt2, 0, filt4, 0); // Q
+
+// filt 3&4 to multiply3&4
+AudioConnection          patchCord7(filt3, 0, multiply3, 0);
+AudioConnection          patchCord8(filt4, 0, multiply4, 0);
+
+
 AudioConnection          patchCord9(sine3, 0, multiply4, 1);
 AudioConnection          patchCord10(sine4, 0, multiply3, 1);
 AudioConnection          patchCord11(multiply3, 0, mixer1, 0);
@@ -73,10 +99,12 @@ U8G2_SSD1306_64X32_1F_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 Rotary rotary = Rotary(1, 0);
 
+const int filtfreq = 250; // state variable filter cut off frequency (half the receiver bandwidth)
+
 // const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
 const int myInput = AUDIO_INPUT_MIC; // use mic input on the audio shield
 
-const int samplerate = 44117.64706;
+const int samplerate = 352800;// 44117.64706;
 const float samplerate_factor = 44117.64706 / samplerate;
 
 const float phaseshift = 90; // degrees phaseshift
@@ -370,6 +398,25 @@ void setup() {
 
   
   AudioInterrupts(); // enable audio interrupts again
+
+
+  filt1.frequency(filtfreq);
+  filt1.resonance(0.707);
+
+  filt2.frequency(filtfreq);
+  filt2.resonance(0.707);
+
+  
+  filt3.frequency(filtfreq);
+  filt3.resonance(0.707);
+
+  filt4.frequency(filtfreq);
+  filt4.resonance(0.707);
+  
+
+
+
+
   
   // initialize the builtin LED digital pin as an output.
   pinMode(led, OUTPUT);
@@ -435,13 +482,13 @@ void setup() {
   u8g2.setCursor(0, 10);  
   u8g2.print(freq);
   u8g2.print(" Hz");
-  u8g2.setCursor(0, 24);  
-  u8g2.print(dblevel);
-  u8g2.print(" dBFS");
-  u8g2.sendBuffer(); // transfer internal memory to the display
-  u8g2.setCursor(pixel, 34);  
-  u8g2.print("|");
-  u8g2.sendBuffer(); // transfer internal memory to the display
+//  u8g2.setCursor(0, 24);  
+//  u8g2.print(dblevel);
+//  u8g2.print(" dBFS");
+//  u8g2.sendBuffer(); // transfer internal memory to the display
+//  u8g2.setCursor(pixel, 34);  
+//  u8g2.print("|");
+//  u8g2.sendBuffer(); // transfer internal memory to the display
   
   }
 
@@ -455,7 +502,7 @@ void rotate() {
   unsigned char result = rotary.process();
 
   if (digitalRead(2)) { // if rotary button is pressed
-    freqstep = 100; // set tuning step to 1 kHz
+    freqstep = 100; // set tuning step to 100 Hz
     }
   else {
     freqstep = 25; // set tuning step to 25 Hz
@@ -476,11 +523,12 @@ void rotate() {
   }
 
   if (freq > samplerate/2) {
-    freq = 22050;//floor(samplerate/2); // FIXME - make dependent on sample rate and floor, taking smallest tuning step into account
+    freq = floor(samplerate/2); // FIXME - make dependent on sample rate and floor, taking smallest tuning step into account
   }
 
     
   setfreq(); // set the current frequency
+  displaystuff();
 
   }
 
@@ -576,7 +624,8 @@ void loop() {
     avg_level = (1-alpha2)*avg_level + alpha2*read_level;
     dblevel = 20*log10(avg_level);
     //Serial.println(dblevel);
-    displaystuff();
+    // display the level
+    // displaystuff();
     
       if (FFT1.available()) {
     
@@ -594,21 +643,21 @@ void loop() {
         }
         // map the maxidx to a display pixel, assuming 64 horizontal pixels
         pixel = map(maxidx, low_idx, high_idx, 0, n_pixels-1);
-        Serial.println(pixel);
+        // Serial.println(pixel);
         
       }
     
     }
   
   
-bouncer.update ( );
- int value = bouncer.risingEdge();//bouncer.read();
-
-  if (value == HIGH) { // encoder button is pressed
-    //displayfreq();
-    displaystuff();
-  
-
-  }
+//bouncer.update ( );
+// int value = bouncer.risingEdge();//bouncer.read();
+//
+//  if (value == HIGH) { // encoder button is pressed
+//    //displayfreq();
+//    displaystuff();
+//  
+//
+//  }
   
 }
