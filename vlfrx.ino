@@ -39,40 +39,64 @@ AudioMixer4              mixer1;         //xy=783.1666870117188,361.166687011718
 AudioOutputI2S           i2s2;           //xy=848,217
 
 AudioEffectDelay         delay1;
-AudioAnalyzeFFT1024      FFT1;
+//AudioAnalyzeFFT1024      FFT1;
 
-
-
-
+//
+//
+//
 AudioFilterStateVariable filt1;
 AudioFilterStateVariable filt2;
 AudioFilterStateVariable filt3;
 AudioFilterStateVariable filt4;
 
+AudioFilterStateVariable filt5;
+AudioFilterStateVariable filt6;
+AudioFilterStateVariable filt7;
+AudioFilterStateVariable filt8;
+
+// input high pass filter
+AudioFilterStateVariable filt9;
 
 
 
 
-AudioConnection          patchCord1(i2s1, 0, multiply1, 0);
-AudioConnection          patchCord2(i2s1, 0, multiply2, 0);
+AudioConnection          patchCord1(i2s1, 0, filt9, 0);
+// AudioConnection          patchCord2(i2s1, 0, filt9, 0);
+
+AudioConnection          patchCord26(filt9, 2, multiply1, 0); // high pass output
+AudioConnection          patchCord27(filt9, 2, multiply2, 0); // high pass output
+
+
+
 AudioConnection          patchCord3(sine1, 0, multiply1, 1);
 AudioConnection          patchCord4(sine2, 0, multiply2, 1);
 AudioConnection          patchCord5(multiply1, fir1);
 AudioConnection          patchCord6(multiply2, fir2);
-// AudioConnection          patchCord7(fir1, 0, multiply3, 0);@@@
-// AudioConnection          patchCord8(fir2, 0, multiply4, 0);@@@
+ // AudioConnection          patchCord7(fir1, 0, multiply3, 0);
+ // AudioConnection          patchCord8(fir2, 0, multiply4, 0);
 
-// fir1 to filt1&2
+//// fir1 to filt1&2
 AudioConnection          patchCord18(fir1, 0, filt1, 0); // I
 AudioConnection          patchCord19(fir2, 0, filt2, 0); // Q
-
-// filt 1&2 to filt3&4
+//
+//// filt 1&2 to filt3&4
 AudioConnection          patchCord20(filt1, 0, filt3, 0); // I
 AudioConnection          patchCord21(filt2, 0, filt4, 0); // Q
+//
 
-// filt 3&4 to multiply3&4
-AudioConnection          patchCord7(filt3, 0, multiply3, 0);
-AudioConnection          patchCord8(filt4, 0, multiply4, 0);
+//// filt3&4 to filt5&6
+AudioConnection          patchCord22(filt3, 0, filt5, 0); // I
+AudioConnection          patchCord23(filt4, 0, filt6, 0); // Q
+//
+//// filt 5&6 to filt7&8
+AudioConnection          patchCord24(filt5, 0, filt7, 0); // I
+AudioConnection          patchCord25(filt6, 0, filt8, 0); // Q
+//
+
+
+//// filt 7&8 to multiply3&4
+AudioConnection          patchCord7(filt7, 0, multiply3, 0);
+AudioConnection          patchCord8(filt8, 0, multiply4, 0);
 
 
 AudioConnection          patchCord9(sine3, 0, multiply4, 1);
@@ -87,7 +111,7 @@ AudioConnection          patchCord15(mixer1, 0, peak, 0);
 AudioConnection          patchCord16(mixer1, 0, delay1, 0);
 AudioConnection          patchCord13(delay1, 0, i2s2, 0);
 AudioConnection          patchCord14(delay1, 0, i2s2, 1);
-AudioConnection          patchCord17(delay1, 0, FFT1, 0);
+//AudioConnection          patchCord17(delay1, 0, FFT1, 0);
 
 
 // GUItool: end automatically generated code
@@ -99,22 +123,38 @@ U8G2_SSD1306_64X32_1F_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 Rotary rotary = Rotary(1, 0);
 
-const int filtfreq = 250; // state variable filter cut off frequency (half the receiver bandwidth)
+
+
 
 // const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
 const int myInput = AUDIO_INPUT_MIC; // use mic input on the audio shield
 
-const int samplerate = 352800;// 44117.64706;
+const int samplerate = 352800;// 44117.64706; //352800;// 
 const float samplerate_factor = 44117.64706 / samplerate;
 
 const float phaseshift = 90; // degrees phaseshift
 
-const float default_freq = 17200;
-float freq = default_freq; // receiver center freq in Hz
+// const float default_freq = 17200;
+float freq;//  = default_freq; // receiver center freq in Hz
 float dblevel = 2;
 float avg_level = 0;
-const float bfo_freq = 600; // BFO freq in Hz
-float freqstep = 25; // tuning step in Hz
+
+String mode;
+String previousmode = "";
+
+
+const int modeVoltThresh = 3150; // mode select voltage
+const int analogPin = A0; // Analog input pin
+const float V_ref = 3300; // ADC V_ref
+const int n_avg = 10; // number of ADC averages
+  
+
+
+float bfo_freq;
+float freqstep;
+int filtfreq;
+int hpffiltfreq; 
+
 const int micgain = 63; // mic gain in dB
 bool do_display = true;
 float vol = 0;
@@ -355,7 +395,27 @@ const short filter_taps[] = {
 };
 
 
+void setmode() {
+if (mode == "VLF") {
+  freq = 17200;
+  bfo_freq = 600; // BFO freq in Hz
+  freqstep = 100; // tuning step in Hz
+  filtfreq = 250; // state variable filter cut off frequency (half the receiver bandwidth)
+  hpffiltfreq = 500;
+}
+else if (mode == "BAT") { // simple heterodyne ulstrasonic receiver
+  freq = 40000;
+  bfo_freq = 0; // BFO freq in Hz - essentially turns it into a double sideband (heterodyne) receiver
+  freqstep = 2000; // tuning step in Hz
+  filtfreq = 8000; // state variable filter cut off frequency (half the receiver bandwidth)
+  hpffiltfreq = 4000;
+}
+}
+
 void setup() {
+
+
+  
   // Audio connections require memory to work.
   AudioMemory(120);
 
@@ -379,40 +439,27 @@ void setup() {
   
   
   // oscillators
-  // ddc sin
-  sine1.amplitude(1.0);
-  sine1.frequency(freq * samplerate_factor);
-  sine1.phase(0);
-  // ddc cos
-  sine2.amplitude(1.0);
-  sine2.frequency(freq * samplerate_factor);
-  sine2.phase(phaseshift);
-  // bfo sin
-  sine3.amplitude(1.0);
-  sine3.frequency(bfo_freq * samplerate_factor);
-  sine3.phase(phaseshift);
-  // bfo cos
-  sine4.amplitude(1.0);
-  sine4.frequency(bfo_freq * samplerate_factor);
-  sine4.phase(0);
+//  // ddc sin
+//  sine1.amplitude(1.0);
+//  sine1.frequency(freq * samplerate_factor);
+//  sine1.phase(0);
+//  // ddc cos
+//  sine2.amplitude(1.0);
+//  sine2.frequency(freq * samplerate_factor);
+//  sine2.phase(phaseshift);
+//  // bfo sin
+//  sine3.amplitude(1.0);
+//  sine3.frequency(bfo_freq * samplerate_factor);
+//  sine3.phase(phaseshift);
+//  // bfo cos
+//  sine4.amplitude(1.0);
+//  sine4.frequency(bfo_freq * samplerate_factor);
+//  sine4.phase(0);
 
   
   AudioInterrupts(); // enable audio interrupts again
 
 
-  filt1.frequency(filtfreq);
-  filt1.resonance(0.707);
-
-  filt2.frequency(filtfreq);
-  filt2.resonance(0.707);
-
-  
-  filt3.frequency(filtfreq);
-  filt3.resonance(0.707);
-
-  filt4.frequency(filtfreq);
-  filt4.resonance(0.707);
-  
 
 
 
@@ -438,7 +485,7 @@ void setup() {
 
 
   // Configure the window algorithm to use for the FFT
-  FFT1.windowFunction(AudioWindowHanning1024);
+//   FFT1.windowFunction(AudioWindowHanning1024);
 
   //start FIR filter
 
@@ -452,12 +499,82 @@ void setup() {
 //  Serial.println(samplerate_factor);
   u8g2.begin();
 
+  // checkmode (read ADC)
+  checkmode();
+  // set mode (set frequency and BFO values)
+  setmode();
+  
+  
+  // init the filters
+  setfilts();
   // init the frequency
   setfreq();
+
+  // init the bfo frequency
+  setbfofreq();
   // display the frequency
   displaystuff();
 
   
+}
+
+
+void checkmode() {
+  
+  long sumModeAdc = 0;
+  for (int i = 0; i<n_avg; i++){
+    sumModeAdc += analogRead(analogPin);
+  }
+  float modeAdc = sumModeAdc / n_avg;
+  float modeVolt = (float(modeAdc)/1023)*V_ref;
+
+// DEBUG
+  Serial.println(modeVolt);
+  if (modeVolt > modeVoltThresh) {
+    mode = "VLF"; // @@@DEBUG - change to VLF
+    }
+  else {
+    mode = "BAT";
+  }
+  if (mode != previousmode) { // if the mode has changed - then set it
+    setmode();
+    setfilts();
+    setfreq();
+    setbfofreq();
+    displaystuff();
+    previousmode = mode;
+  }
+}
+
+void setfilts() {
+  filt1.frequency(filtfreq);
+  filt1.resonance(0.707);
+
+  filt2.frequency(filtfreq);
+  filt2.resonance(0.707);
+
+  
+  filt3.frequency(filtfreq);
+  filt3.resonance(0.707);
+
+  filt4.frequency(filtfreq);
+  filt4.resonance(0.707);
+
+  filt5.frequency(filtfreq);
+  filt5.resonance(0.707);
+
+  filt6.frequency(filtfreq);
+  filt6.resonance(0.707);
+
+  filt7.frequency(filtfreq);
+  filt7.resonance(0.707);
+
+  filt8.frequency(filtfreq);
+  filt8.resonance(0.707);
+
+  filt9.frequency(hpffiltfreq);
+  filt9.resonance(0.707);
+
 }
 
 
@@ -471,21 +588,37 @@ void setup() {
   // ddc cos
   sine2.amplitude(1.0);
   sine2.frequency(freq * samplerate_factor);
-  sine2.phase(phaseshift);
+  sine2.phase(phaseshift);  
     AudioInterrupts(); // enable audio interrupts again
   }
+void setbfofreq(){
+   AudioNoInterrupts(); // disable interrupts for a while to setup everything, and guarantee accurate phase quadrature
+  // bfo sin
+  sine3.amplitude(1.0);
+  sine3.frequency(bfo_freq * samplerate_factor);
+  sine3.phase(phaseshift);
+  // bfo cos
+  sine4.amplitude(1.0);
+  sine4.frequency(bfo_freq * samplerate_factor);
+  sine4.phase(0);
+  AudioInterrupts(); // enable audio interrupts again
+}
+
 
   void displaystuff(){
   u8g2.clearBuffer(); // clear the internal memory
   u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
   // u8g2.drawStr(0, 10, "Freq (Hz):"); // write something to the internal memory
-  u8g2.setCursor(0, 10);  
+  u8g2.setCursor(0, 8);  
   u8g2.print(freq);
   u8g2.print(" Hz");
-//  u8g2.setCursor(0, 24);  
-//  u8g2.print(dblevel);
-//  u8g2.print(" dBFS");
-//  u8g2.sendBuffer(); // transfer internal memory to the display
+  u8g2.setCursor(0, 20);  
+  u8g2.print(dblevel);
+  u8g2.print(" dBFS");
+  u8g2.setCursor(0, 32); 
+  u8g2.print("Mode: ");
+  u8g2.print(mode);
+  u8g2.sendBuffer(); // transfer internal memory to the display
 //  u8g2.setCursor(pixel, 34);  
 //  u8g2.print("|");
 //  u8g2.sendBuffer(); // transfer internal memory to the display
@@ -501,12 +634,12 @@ void setup() {
 void rotate() {
   unsigned char result = rotary.process();
 
-  if (digitalRead(2)) { // if rotary button is pressed
-    freqstep = 100; // set tuning step to 100 Hz
-    }
-  else {
-    freqstep = 25; // set tuning step to 25 Hz
-  }
+//  if (digitalRead(2)) { // if rotary button is pressed
+//    freqstep = 100; // set tuning step to 100 Hz
+//    }
+//  else {
+//    freqstep = 25; // set tuning step to 25 Hz
+//  }
   
   if (result == DIR_CW) {
     freq = freq + freqstep; // increment frequency
@@ -517,8 +650,8 @@ void rotate() {
   }
 
   // frequency limits
-  if (freq < 1000) { // frequency lower than 1 kHz
-    freq = 1000;
+  if (freq < 0) { // frequency lower than 0 Hz
+    freq = 0;
     
   }
 
@@ -528,7 +661,8 @@ void rotate() {
 
     
   setfreq(); // set the current frequency
-  displaystuff();
+  // delay(100);
+  // displaystuff();
 
   }
 
@@ -602,10 +736,22 @@ void setI2SFreq(int freq) {
 
 void loop() {
 
+  checkmode();
+
+  if (digitalRead(2)) {
+    displaystuff();
+  }
   // very crude AGC - divide the amplitude by the measured peak, with an empirically determined threshold
   if (peak.available()) {
     float read_level = peak.read();
     float agc = 1 /(30*read_level);
+
+  // cap the AGC value to prevent the receiver from muting completely upon thumbs
+  float min_agc = 0.001;
+  if (agc < min_agc)
+  {
+    agc = min_agc; 
+  }
 
       // include a hang time
       if (agc < vol) { // fast attack (instantaneous, actually)
@@ -613,7 +759,7 @@ void loop() {
         }
         else{ // slow decay
         vol = (1-alpha)*vol + alpha*agc;  // simple 1st order IIR low pass filter
-        }
+        } // @@@DEBUG - prevent peaks from blocking the AGC - 
       // }
     if (vol > 0.7) {
       vol = 0.7;
@@ -621,31 +767,32 @@ void loop() {
     sgtl5000_1.volume(vol);
     
 
-    avg_level = (1-alpha2)*avg_level + alpha2*read_level;
-    dblevel = 20*log10(avg_level);
+     avg_level = (1-alpha2)*avg_level + alpha2*read_level;
+     dblevel = 20*log10(avg_level);
+    
     //Serial.println(dblevel);
     // display the level
     // displaystuff();
     
-      if (FFT1.available()) {
-    
-      // each time new FFT data is available
-      // calculate the position of the max the data between the bins of interest
-        float maxval = 0;
-        int maxidx = 0;
-        for (int i = low_idx; i <= high_idx; i++) {
-          if (FFT1.read(i)> maxval){
-            // store a new max value
-            maxval = FFT1.read(i);
-            maxidx = i; // maxidx runs from 0:n_bins
-            
-            }
-        }
-        // map the maxidx to a display pixel, assuming 64 horizontal pixels
-        pixel = map(maxidx, low_idx, high_idx, 0, n_pixels-1);
-        // Serial.println(pixel);
-        
-      }
+//      if (FFT1.available()) {
+//    
+//      // each time new FFT data is available
+//      // calculate the position of the max the data between the bins of interest
+//        float maxval = 0;
+//        int maxidx = 0;
+//        for (int i = low_idx; i <= high_idx; i++) {
+//          if (FFT1.read(i)> maxval){
+//            // store a new max value
+//            maxval = FFT1.read(i);
+//            maxidx = i; // maxidx runs from 0:n_bins
+//            
+//            }
+//        }
+//        // map the maxidx to a display pixel, assuming 64 horizontal pixels
+//        pixel = map(maxidx, low_idx, high_idx, 0, n_pixels-1);
+//        // Serial.println(pixel);
+//        
+//      }
     
     }
   
