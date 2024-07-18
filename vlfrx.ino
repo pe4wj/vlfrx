@@ -58,6 +58,10 @@ AudioFilterStateVariable filt8;
 AudioFilterStateVariable filt9;
 
 
+// autodetect
+AudioEffectFade          fade1;
+AudioAnalyzeFFT1024    myFFT;
+
 
 
 AudioConnection          patchCord1(i2s1, 0, filt9, 0);
@@ -66,7 +70,7 @@ AudioConnection          patchCord1(i2s1, 0, filt9, 0);
 AudioConnection          patchCord26(filt9, 2, multiply1, 0); // high pass output
 AudioConnection          patchCord27(filt9, 2, multiply2, 0); // high pass output
 
-
+AudioConnection          patchCord28(filt9, 2, myFFT, 0); // high pass output to FFT input
 
 AudioConnection          patchCord3(sine1, 0, multiply1, 1);
 AudioConnection          patchCord4(sine2, 0, multiply2, 1);
@@ -108,7 +112,10 @@ AudioAnalyzePeak         peak;
 AudioConnection          patchCord15(mixer1, 0, peak, 0);
 
 
-AudioConnection          patchCord16(mixer1, 0, delay1, 0);
+AudioConnection          patchCord16(mixer1, 0, fade1, 0);
+
+AudioConnection          patchCord29(fade1, 0, delay1, 0);
+
 AudioConnection          patchCord13(delay1, 0, i2s2, 0);
 AudioConnection          patchCord14(delay1, 0, i2s2, 1);
 //AudioConnection          patchCord17(delay1, 0, FFT1, 0);
@@ -126,11 +133,12 @@ Rotary rotary = Rotary(1, 0);
 
 
 
-// const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
-const int myInput = AUDIO_INPUT_MIC; // use mic input on the audio shield
+const int myInput = AUDIO_INPUT_LINEIN; // use line input on the audio shield
+// const int myInput = AUDIO_INPUT_MIC; // use mic input on the audio shield
 
-const int samplerate = 352800;// 44117.64706; //352800;// 
-const float samplerate_factor = 44117.64706 / samplerate;
+// const int samplerate = 352800;// 44117.64706; //352800;// 
+int samplerate;
+float samplerate_factor; // = 44117.64706 / samplerate;
 
 const float phaseshift = 90; // degrees phaseshift
 
@@ -162,12 +170,39 @@ const float alpha = 0.002; // averaging for AGC decay
 const float alpha2 = 1; // averaging for peak value display in dBFS
 const int delaytime = 10; // milliseconds
 
-//FFT vars
-const int low_idx = 7;    // lower frequency limit is 300 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
-const int high_idx = 21; // upper frequency limit is  900 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
+////FFT vars
+//const int low_idx = 7;    // lower frequency limit is 300 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
+//const int high_idx = 21; // upper frequency limit is  900 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
+//const int n_bins = high_idx - low_idx + 1; // the number of bins to be processed in the FFT for a 1024 point FFT
+//const int n_pixels = 64; // number of row pixels of the OLED display
+//int pixel = 0;
+
+
+// BAT detector autodetect vars
+elapsedMillis hangcounter = 0; // counter which increments when the squelch hangs
+
+const int FFT_SIZE = 1024;
+
+const int low_idx = 44; // 15 kHz // lower frequency limit is approx 20000 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
+const int high_idx = 435; // upper frequency limit is approx 150000 Hz, this is the closest bin idx in the FFT for a 1024 point FFT
 const int n_bins = high_idx - low_idx + 1; // the number of bins to be processed in the FFT for a 1024 point FFT
-const int n_pixels = 64; // number of row pixels of the OLED display
-int pixel = 0;
+
+const float thresh = 0.1; // squelch threshold
+const int hangtime = 2000; // hang time in milliseconds (monoflop)
+const int fadeOutTime = 100; // fade out time in milliseconds
+
+bool hang = 0; // boolean to indicate whether the squelch is hanging
+
+float sum;
+float mean;
+float variance;
+float relvar;
+float relvar_minus_one;
+float scaled_relvar_minus_one;
+float actual_thresh = thresh;
+bool is_open = false;
+
+float peakfreq = 45678;
 /*
 
 FIR filter designed with
@@ -395,21 +430,114 @@ const short filter_taps[] = {
 };
 
 
+
+void autodetect() {
+  int i;
+  if (myFFT.available()) {
+
+    // each time new FFT data is available
+
+    // calculate the mean of the data
+    sum = 0;
+    float latest_max = 0;
+    int latest_max_idx = 0;
+
+    for (i = low_idx; i <= high_idx; i++) {
+      // calculate the mean of the data
+      sum += myFFT.read(i); // sum over all bins in the FFT
+
+     // find the peak frequency - so that the heterodyne rx can be tuned to that freq (with a BFO freq of 1 kHz?)
+    
+     if (myFFT.read(i) > latest_max) {
+      // store it as the new max
+      latest_max = myFFT.read(i);
+      latest_max_idx = i;
+      peakfreq = (latest_max_idx/float(FFT_SIZE))*samplerate;
+     }
+    }
+    mean = sum / float(n_bins); // divide the sum by the number of datapoints
+
+    // calculate the sum of the squares of the differences from the mean
+    sum = 0; // re-initialize sum
+    for (i = low_idx; i <= high_idx; i++) {
+      sum += pow((mean - myFFT.read(i)), 2); // sum over all bins in the FFT
+    }
+
+    
+    
+
+    // from that, calculate the variance
+    variance = sum / float(n_bins); // divide the sum by the number of datapoints
+
+    // now calculate the relative variance by dividing the variance by the mean squared
+    relvar = variance / (mean * mean);
+
+    // subtract 1 from the relative variance
+    relvar_minus_one = relvar - 1;
+
+    // scale the relative variance by the amount of datapoints
+    scaled_relvar_minus_one = relvar_minus_one * sqrt(float(n_bins));
+
+    // Serial.println(scaled_relvar_minus_one);
+
+    //     determine if a signal is present, but only when the squelch is not hanging on a previous signal
+    if (hang) {
+      // do nothing except check whether the max hangtime has been obtained
+      if (hangcounter > hangtime) {
+        hangcounter = 0;
+        hang = 0;
+        displaystuff();
+      }
+
+    }
+    else {
+      // determine whether there is a signal
+      if ((scaled_relvar_minus_one > actual_thresh) || is_open) {
+
+        //start "hanging"
+        hang = 1;
+        
+  // set the frequency to the peak detected frequency
+  freq = peakfreq;
+  setfreq();
+  displaystuff();
+  
+
+ 
+        fade1.fadeIn(1);
+        digitalWrite(led_green, LOW); // LED ON
+
+      }
+      else {
+
+        fade1.fadeOut(fadeOutTime);
+        digitalWrite(led_green, HIGH); // LED OFF
+      }
+    }
+
+  }
+}
+
+
 void setmode() {
 if (mode == "VLF") {
+  samplerate = 96000;
   freq = 17200;
   bfo_freq = 600; // BFO freq in Hz
   freqstep = 100; // tuning step in Hz
   filtfreq = 250; // state variable filter cut off frequency (half the receiver bandwidth)
   hpffiltfreq = 500;
+  
 }
 else if (mode == "BAT") { // simple heterodyne ulstrasonic receiver
+  samplerate = 352800;
   freq = 40000;
-  bfo_freq = 0; // BFO freq in Hz - essentially turns it into a double sideband (heterodyne) receiver
+  bfo_freq = 1000; // BFO freq in Hz - essentially turns it into a double sideband (heterodyne) receiver
   freqstep = 2000; // tuning step in Hz
   filtfreq = 8000; // state variable filter cut off frequency (half the receiver bandwidth)
-  hpffiltfreq = 4000;
+  hpffiltfreq = 4000;//DEBUG4000;
 }
+// Serial.println(mode);
 }
 
 void setup() {
@@ -433,9 +561,9 @@ void setup() {
   
   //setup everything
   // disable interrupts for a while to setup everything, and guarantee accurate phase quadrature
-  AudioNoInterrupts(); // disable audio library momentarily
+  // AudioNoInterrupts(); // disable audio library momentarily
   // set sample rate
-  setI2SFreq(samplerate);
+//   setI2SFreq(samplerate);
   
   
   // oscillators
@@ -457,7 +585,7 @@ void setup() {
 //  sine4.phase(0);
 
   
-  AudioInterrupts(); // enable audio interrupts again
+  // AudioInterrupts(); // enable audio interrupts again
 
 
 
@@ -503,7 +631,11 @@ void setup() {
   checkmode();
   // set mode (set frequency and BFO values)
   setmode();
+  setup();
   
+// set the samplerate
+setI2SFreq(samplerate);
+samplerate_factor = 44117.64706 / samplerate;
   
   // init the filters
   setfilts();
@@ -514,6 +646,7 @@ void setup() {
   setbfofreq();
   // display the frequency
   displaystuff();
+
 
   
 }
@@ -529,13 +662,16 @@ void checkmode() {
   float modeVolt = (float(modeAdc)/1023)*V_ref;
 
 // DEBUG
-  Serial.println(modeVolt);
+  // Serial.println(modeVolt);
   if (modeVolt > modeVoltThresh) {
     mode = "VLF"; // @@@DEBUG - change to VLF
     }
   else {
     mode = "BAT";
   }
+
+  // DEBUG
+  // mode = "VLF";
   if (mode != previousmode) { // if the mode has changed - then set it
     setmode();
     setfilts();
@@ -609,9 +745,21 @@ void setbfofreq(){
   u8g2.clearBuffer(); // clear the internal memory
   u8g2.setFont(u8g2_font_t0_11_tf);  // choose a suitable font
   // u8g2.drawStr(0, 10, "Freq (Hz):"); // write something to the internal memory
-  u8g2.setCursor(0, 8);  
+  u8g2.setCursor(0, 8); 
+  if (mode == "BAT") {
+    if (hang) {
+    u8g2.print(freq);
+    u8g2.print(" Hz");  
+    }
+    else {
+      u8g2.print("-------");  
+    }
+  }
+  else {
   u8g2.print(freq);
   u8g2.print(" Hz");
+  }
+  
   u8g2.setCursor(0, 20);  
   u8g2.print(dblevel);
   u8g2.print(" dBFS");
@@ -663,7 +811,7 @@ void rotate() {
   setfreq(); // set the current frequency
   // delay(100);
   // displaystuff();
-
+// Serial.println(freq);
   }
 
 // set samplerate code by Frank Bösing - taken from DD4WH's convolution SDR code: https://github.com/DD4WH/Teensy-ConvolutionSDR
@@ -737,6 +885,13 @@ void setI2SFreq(int freq) {
 void loop() {
 
   checkmode();
+
+  if (mode == "BAT") {
+    autodetect();
+  }
+  else {
+      fade1.fadeIn(1);
+  }
 
   if (digitalRead(2)) {
     displaystuff();
